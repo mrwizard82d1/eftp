@@ -25,6 +25,8 @@ defmodule Eftp.Client do
   Ftp Client Functions
   """
 
+  require Logger
+
   @doc """
   Connects to an FTP Server. If successful, returns a PID. This pid will be
   passed to the authenticate command
@@ -36,7 +38,7 @@ defmodule Eftp.Client do
   ```
   """
   def connect(host, port \\ 21) do
-    case :inets.start(:ftpc, host: '#{host}', port: '#{port}', progress: true) do
+    case :inets.start(:ftpc, host: '#{host}', port: '#{port}', progress: true, verbose: true) do
       {:ok, pid} ->
         pid
       {:error, reason} ->
@@ -113,6 +115,42 @@ defmodule Eftp.Client do
   end
 
   @doc """
+  Downloads a remote file into a local directory using chunks.
+  """
+  def download(pid, remote_file, local_directory) do
+    Logger.info("Eftp.Client.download called with")
+    Logger.info("  pid: #{inspect pid}")
+    Logger.info("  remote file path: #{remote_file}")
+    Logger.info("  local directory: #{local_directory}")
+
+    :ok = :ftp.recv_chunk_start(pid, '#{remote_file}')
+    local_file_name = Path.join(local_directory, remote_file)
+    local_dir = Path.dirname(local_file_name)
+    :ok = File.mkdir_p(local_dir)
+    {:ok, local_file} = File.open(local_file_name, [:binary, :append])
+    {:ok, bytes_transferred} = append(pid, remote_file, local_file, 0)
+    File.close(local_file)
+    Logger.info("Successfully transferred #{bytes_transferred} bytes.")
+    {:ok, bytes_transferred}
+  end
+
+  @doc """
+  Appends data from remote file to local file.
+  """
+  def append(pid, remote_file, local_file, so_far) do
+    case :ftp.recv_chunk(pid) do
+      :ok -> {:ok, so_far}
+      {:ok, chunk} ->
+        IO.write(local_file, chunk)
+        Logger.info("Transferred #{byte_size(chunk)} bytes.")
+        append(pid, remote_file, local_file, so_far + byte_size(chunk))
+      {:error, :trans_neg_compl} ->
+        Logger.info("Transient error. Retrying.")
+        append(pid, remote_file, local_file, so_far)
+    end
+  end
+
+  @doc """
   Retrieves list of files from the current directory
   """
   def list(pid) do
@@ -123,7 +161,6 @@ defmodule Eftp.Client do
     |> String.split("\r\n")
     |> Enum.reject(fn(x) -> x == "" end)
   end
-
 
   #-- PRIVATE --#
   defp unixtime() do
