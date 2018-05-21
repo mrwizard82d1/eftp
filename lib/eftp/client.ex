@@ -38,12 +38,30 @@ defmodule Eftp.Client do
   ```
   """
   def connect(host, port \\ 21) do
-    case :inets.start(:ftpc, host: '#{host}', port: '#{port}', progress: true, verbose: true) do
+    case :inets.start(:ftpc, host: '#{host}', port: '#{port}', progress: true, verbose: true, timeout: 1800000) do
       {:ok, pid} ->
         pid
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  @doc """
+  Disconnects from an FTP Server. If successful, returns term `{:ok, "QUIT"}. If already disconnected, returns `:ok`.
+
+  ## Examples
+  ```elixir
+  iex> Eftp.Client.disconnect(#PID<0.158.0>, 21)
+  ```elixir
+  {:ok, "QUIT"}
+
+  OR
+
+  :ok
+
+  """
+  def disconnect(pid) do
+    :inets.stop(:ftpc, pid)
   end
 
   @doc """
@@ -143,10 +161,17 @@ defmodule Eftp.Client do
       {:ok, chunk} ->
         IO.write(local_file, chunk)
         Logger.info("Transferred #{byte_size(chunk)} bytes.")
+        :ftp.pwd(pid) # send a simple command to keep control connection alive
+#        :ftp.quote(pid, 'NOOP')
+#        Logger.info("Sent NOOP")
         append(pid, remote_file, local_file, so_far + byte_size(chunk))
       {:error, :trans_neg_compl} ->
         Logger.info("Transient error. Retrying.")
         append(pid, remote_file, local_file, so_far)
+      {:error, reason} ->
+        detailed_error = :ftp.formaterror(reason)
+        Logger.info("Append failed: #{detailed_error}")
+        {:error, reason}
     end
   end
 
