@@ -38,7 +38,7 @@ defmodule Eftp.Client do
   ```
   """
   def connect(host, port \\ 21) do
-    case :inets.start(:ftpc, host: '#{host}', port: '#{port}', progress: true, verbose: true, timeout: 3600000) do
+    case :inets.start(:ftpc, host: '#{host}', port: '#{port}', progress: true, verbose: true) do
       {:ok, pid} ->
         pid
       {:error, reason} ->
